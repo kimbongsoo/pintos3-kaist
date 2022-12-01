@@ -119,7 +119,7 @@ pml4_get_page : 들어온 주소가 유자 가상주소 안에 할당된 페이�
 -->유저 영역 내이면서도 그 안에 할당된 페이지 안에 있어야 한다
 */
 void
-check_add (void *add) {
+check_address (void *add) {
   struct thread *cur = thread_current ();
   if (!is_user_vaddr (add) || add == NULL ||
       pml4_get_page (cur->pml4, add) == NULL) {
@@ -157,7 +157,7 @@ fork_handler (const char *thread_name, struct intr_frame *f) {
 
 int
 exec_handler (const char *file) {
-  check_add (file);
+  check_address (file);
   char *file_name_copy = palloc_get_page (PAL_ZERO);
 
   if (file_name_copy == NULL)
@@ -180,19 +180,19 @@ wait_handler (tid_t pid) {
 bool
 create_handler (const char *file, unsigned initial_size) {
 
-  check_add (file);
+  check_address (file);
   return filesys_create (file, initial_size);
 }
 
 bool
 remove_handler (const char *file) {
-  check_add (file);
+  check_address (file);
   return (filesys_remove (file));
 }
 
 int
 open_handler (const char *file) {
-  check_add (file);
+  check_address (file);
   struct file *file_st = filesys_open (file);
   if (file_st == NULL) {
     return -1;
@@ -238,7 +238,7 @@ file_size_handler (int fd) {
 
 int
 read_handler (int fd, const void *buffer, unsigned size) {
-  check_add (buffer);
+  check_address (buffer);
   int read_result;
   struct file *file_obj = find_file_using_fd (fd);
 
@@ -264,7 +264,7 @@ read_handler (int fd, const void *buffer, unsigned size) {
 
 int
 write_handler (int fd, const void *buffer, unsigned size) {
-  check_add (buffer);
+  check_address (buffer);
   struct file *file_obj = find_file_using_fd (fd);
   if (fd == STDIN_FILENO)
     return 0;
@@ -294,7 +294,7 @@ tell_handler (int fd) {
   if (fd <= 2)
     return;
   struct file *file_obj = find_file_using_fd (fd);
-  check_add (file_obj);
+  check_address (file_obj);
   if (file_obj == NULL)
     return;
 
