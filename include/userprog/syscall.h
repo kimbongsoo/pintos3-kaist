@@ -8,9 +8,9 @@
 #define USERPROG_SYSCALL_H
 
 void syscall_init (void);
-void check_address (void *add);
-void halt (void);
-void exit (int status);
+void check_add (void *add);
+void halt_handler (void);
+void exit_handler (int status);
 tid_t fork_handler (const char *thread_name, struct intr_frame *f);
 int exec_handler (const char *file);
 bool create_handler (const char *file, unsigned initial_size);

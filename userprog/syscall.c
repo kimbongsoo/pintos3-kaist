@@ -48,10 +48,8 @@ syscall_init (void) {
   lock_init (&filesys_lock);
 }
 
-/* The main system call interface */
 void
 syscall_handler (struct intr_frame *f UNUSED) {
-  // TODO: Your implementation goes here.
 
   int syscall_no = f->R.rax;
 
@@ -113,7 +111,15 @@ syscall_handler (struct intr_frame *f UNUSED) {
   }
 }
 
-void check_address (void *add) {
+/* 포인터가 가리키는 주소가 user영역에 유요한 주소인지 확인*/
+/*
+is_user_vaddr : 유저 가상주소 check
+add == NULL : 들어온 주소가 NULL 인지 확인
+pml4_get_page : 들어온 주소가 유자 가상주소 안에 할당된 페이지의 pointer인지 확인 
+-->유저 영역 내이면서도 그 안에 할당된 페이지 안에 있어야 한다
+*/
+void
+check_add (void *add) {
   struct thread *cur = thread_current ();
   if (!is_user_vaddr (add) || add == NULL ||
       pml4_get_page (cur->pml4, add) == NULL) {
@@ -121,31 +127,37 @@ void check_address (void *add) {
   }
 }
 
-static struct file * find_file_using_fd (int fd) {
+static struct file *
+find_file_using_fd (int fd) {
   struct thread *cur = thread_current ();
 
-  if (fd < 0 || fd >= FD_COUNT_LIMT) return NULL;
+  if (fd < 0 || fd >= FD_COUNT_LIMT)
+    return NULL;
 
   return cur->fd_table[fd];
 }
 
-void halt_handler (void) {
+void
+halt_handler (void) {
   power_off ();
 }
 
-void exit_handler (int status) {
+void
+exit_handler (int status) {
   struct thread *cur = thread_current ();
   cur->exit_status = status;
   printf ("%s: exit(%d)\n", cur->name, status);
   thread_exit ();
 }
 
-tid_t fork_handler (const char *thread_name, struct intr_frame *f) {
+tid_t
+fork_handler (const char *thread_name, struct intr_frame *f) {
   return process_fork (thread_name, f);
 }
 
-int exec_handler (const char *file) {
-  check_address (file);
+int
+exec_handler (const char *file) {
+  check_add (file);
   char *file_name_copy = palloc_get_page (PAL_ZERO);
 
   if (file_name_copy == NULL)
@@ -160,23 +172,27 @@ int exec_handler (const char *file) {
   return 0;
 }
 
-int wait_handler (tid_t pid) {
+int
+wait_handler (tid_t pid) {
   return process_wait (pid);
 }
 
-bool create_handler (const char *file, unsigned initial_size) {
+bool
+create_handler (const char *file, unsigned initial_size) {
 
-  check_address (file);
-  return filesys_create (file, initial_size);   // lock 추가?
+  check_add (file);
+  return filesys_create (file, initial_size);
 }
 
-bool remove_handler (const char *file) {
-  check_address (file);
-  return (filesys_remove (file));   // lock 추가?
+bool
+remove_handler (const char *file) {
+  check_add (file);
+  return (filesys_remove (file));
 }
 
-int open_handler (const char *file) {
-  check_address (file);
+int
+open_handler (const char *file) {
+  check_add (file);
   struct file *file_st = filesys_open (file);
   if (file_st == NULL) {
     return -1;
@@ -184,47 +200,57 @@ int open_handler (const char *file) {
 
   int fd_idx = add_file_to_FDT (file_st);
 
-  if (fd_idx == -1) file_close (file_st);
-  
+  if (fd_idx == -1) {
+    file_close (file_st);
+  }
 
   return fd_idx;
 }
 
-int add_file_to_FDT (struct file *file) {
+int
+add_file_to_FDT (struct file *file) {
   struct thread *cur = thread_current ();
   struct file **fdt = cur->fd_table;
   int fd_index = cur->fd_idx;
 
-  while (fdt[fd_index] != NULL && fd_index < FD_COUNT_LIMT) 
+  while (fdt[fd_index] != NULL && fd_index < FD_COUNT_LIMT) {
     fd_index++;
-  
-  if (fd_index >= FD_COUNT_LIMT) return -1;
-  
+  }
+
+  if (fd_index >= FD_COUNT_LIMT) {
+    return -1;
+  }
+
   cur->fd_idx = fd_index;
   fdt[fd_index] = file;
   return fd_index;
 }
 
-int file_size_handler (int fd) {
+int
+file_size_handler (int fd) {
   struct file *file_ = find_file_using_fd (fd);
 
-  if (file_ == NULL) return -1;
+  if (file_ == NULL)
+    return -1;
 
   return file_length (file_);
 }
 
-int read_handler (int fd, const void *buffer, unsigned size) {
-  check_address (buffer);
+int
+read_handler (int fd, const void *buffer, unsigned size) {
+  check_add (buffer);
   int read_result;
   struct file *file_obj = find_file_using_fd (fd);
 
-  if (file_obj == NULL) return -1;
+  if (file_obj == NULL)
+    return -1;
 
   if (fd == STDIN_FILENO) {
     char word;
     for (read_result = 0; read_result < size; read_result++) {
       word = input_getc ();
-      if (word == "\0") break;
+      if (word == "\0")
+        break;
     }
   } else if (fd == STDOUT_FILENO) {
     return -1;
@@ -236,16 +262,17 @@ int read_handler (int fd, const void *buffer, unsigned size) {
   return read_result;
 }
 
-int write_handler (int fd, const void *buffer, unsigned size) {
-  check_address (buffer);
+int
+write_handler (int fd, const void *buffer, unsigned size) {
+  check_add (buffer);
   struct file *file_obj = find_file_using_fd (fd);
-  if (fd == STDIN_FILENO) return 0;
+  if (fd == STDIN_FILENO)
+    return 0;
 
   if (fd == STDOUT_FILENO) {
     putbuf (buffer, size);
     return size;
-  } 
-  else {
+  } else {
     if (file_obj == NULL)
       return 0;
     lock_acquire (&filesys_lock);
@@ -255,23 +282,27 @@ int write_handler (int fd, const void *buffer, unsigned size) {
   }
 }
 
-void seek_handler (int fd, unsigned position) {
+void
+seek_handler (int fd, unsigned position) {
   struct file *file_obj = find_file_using_fd (fd);
+
   file_seek (file_obj, position);
 }
 
-unsigned tell_handler (int fd) {
+unsigned
+tell_handler (int fd) {
   if (fd <= 2)
     return;
   struct file *file_obj = find_file_using_fd (fd);
-  check_address (file_obj);
+  check_add (file_obj);
   if (file_obj == NULL)
     return;
 
   return file_tell (file_obj);
 }
 
-void close_handler (int fd) {
+void
+close_handler (int fd) {
   struct file *file_obj = find_file_using_fd (fd);
   if (file_obj == NULL)
     return;
