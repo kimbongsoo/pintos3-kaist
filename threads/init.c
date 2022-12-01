@@ -66,7 +66,7 @@ int main (void) NO_RETURN;
 
 /* Pintos main program. */
 int
-main (void) {
+main (void) { 
 	uint64_t mem_end;
 	char **argv;
 
@@ -262,7 +262,6 @@ run_actions (char **argv) {
 		int argc;                         /* # of args, including action name. */
 		void (*function) (char **argv);   /* Function to execute action. */
 	};
-
 	/* Table of supported actions. */
 	static const struct action actions[] = {
 		{"run", 2, run_task},
