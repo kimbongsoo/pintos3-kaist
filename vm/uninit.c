@@ -51,9 +51,10 @@ uninit_initialize (struct page *page, void *kva) {
 	vm_initializer *init = uninit->init;
 	void *aux = uninit->aux;
 
-	/* TODO: You may need to fix this function. */
+	/* TODO: 이 함수를 고쳐야할지도 모릅니다. */
 	return uninit->page_initializer (page, uninit->type, kva) &&
 		(init ? init (page, aux) : true);
+		
 }
 
 /* Free the resources hold by uninit_page. Although most of pages are transmuted
@@ -64,5 +65,5 @@ static void
 uninit_destroy (struct page *page) {
 	struct uninit_page *uninit UNUSED = &page->uninit;
 	/* TODO: Fill this function.
-	 * TODO: If you don't have anything to do, just return. */
+	 * TODO: 아무것도 하지 않으면 Return된다. */
 }
