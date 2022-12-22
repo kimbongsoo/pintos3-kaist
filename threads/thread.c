@@ -395,7 +395,6 @@ thread_set_priority (int new_priority) {
   thread_current ()->init_pri = new_priority;
 
   refresh_pri ();
-
   dona_priority ();
   test_max_priority ();
 }
@@ -441,7 +440,7 @@ thread_get_recent_cpu (void) {
    to it to enable thread_start() to continue, and immediately
    blocks.  After that, the idle thread never appears in the
    ready list.  It is returned by next_thread_to_run() as a
-   special case when the ready list is empty. */
+    special case when the ready list is empty. */
 static void
 idle (void *idle_started_ UNUSED) {
   struct semaphore *idle_started = idle_started_;

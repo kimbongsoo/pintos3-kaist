@@ -48,10 +48,27 @@ syscall_init (void) {
   lock_init (&filesys_lock);
 }
 
-/* The main system call interface */
+struct page* check_address(void *addr){
+	// 주소 addr이 유저 가상 주소가 아니거나 pml4에 없으면 프로세스 종료
+	if (addr == NULL || !is_user_vaddr(addr)) exit_handler(-1);
+	
+	// 유저 가상 주소면 SPT에서 페이지 찾아서 리턴
+	return spt_find_page(&thread_current()->spt, addr);
+}
+
+void check_valid_buffer(void* buffer, unsigned size, void* rsp, bool to_write) {
+    for (int i = 0; i < size; i++) {
+        struct page* page = check_address(buffer + i);
+        // 인자로 받은 buffer부터 buffer + size까지의 크기가 한 페이지의 크기를 넘을수도 있음
+        if(page == NULL)
+            exit_handler(-1);
+        if(to_write == true && page->writable == false)
+            exit_handler(-1);
+    }
+}
+
 void
 syscall_handler (struct intr_frame *f UNUSED) {
-  // TODO: Your implementation goes here.
 
   int syscall_no = f->R.rax;
 
@@ -63,7 +80,6 @@ syscall_handler (struct intr_frame *f UNUSED) {
   uint64_t a6 = f->R.r9;
 
   // SCW_dump_frame (f);
-  // printf("아 진짜 이러지 말자 미친 \n");
   switch (syscall_no) {
   case SYS_HALT:
     halt_handler ();
@@ -73,7 +89,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
     break;
   case SYS_FORK:
     f->R.rax = fork_handler (a1, f);
-   break;
+    break;
   case SYS_EXEC:
     f->R.rax = exec_handler (a1);
     break;
@@ -93,10 +109,11 @@ syscall_handler (struct intr_frame *f UNUSED) {
     f->R.rax = file_size_handler (a1);
     break;
   case SYS_READ:
+    check_valid_buffer(f->R.rsi, f->R.rdx, f->rsp, 1);
     f->R.rax = read_handler (a1, a2, a3);
     break;
   case SYS_WRITE:
-    // printf("%s",a2);
+  check_valid_buffer(f->R.rsi, f->R.rdx, f->rsp, 0);
     f->R.rax = write_handler (a1, a2, a3);
     break;
   case SYS_SEEK:
@@ -108,29 +125,26 @@ syscall_handler (struct intr_frame *f UNUSED) {
   case SYS_CLOSE:
     close_handler (a1);
     break;
+  case SYS_MMAP:
+    f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+    break;
+  case SYS_MUNMAP:
+    munmap(f->R.rdi);
+    break;
 
   default:
-    thread_exit ();
+    exit_handler (-1);
     break;
   }
 }
 
 /* 포인터가 가리키는 주소가 user영역에 유요한 주소인지 확인*/
 /*
-is_user_vaddr : 유저 가상주소 체크
+is_user_vaddr : 유저 가상주소 check
 add == NULL : 들어온 주소가 NULL 인지 확인
-pml4_get_page : 들어온 주소가 유자 가상주소 안에 할당된 페이지를 가리키고있는지
-확인
+pml4_get_page : 들어온 주소가 유자 가상주소 안에 할당된 페이지의 pointer인지 확인 
 -->유저 영역 내이면서도 그 안에 할당된 페이지 안에 있어야 한다
 */
-void
-check_add (void *add) {
-  struct thread *cur = thread_current ();
-  if (!is_user_vaddr (add) || add == NULL ||
-      pml4_get_page (cur->pml4, add) == NULL) {
-    exit_handler (-1);
-  }
-}
 
 static struct file *
 find_file_using_fd (int fd) {
@@ -162,7 +176,7 @@ fork_handler (const char *thread_name, struct intr_frame *f) {
 
 int
 exec_handler (const char *file) {
-  check_add (file);
+  check_address (file);
   char *file_name_copy = palloc_get_page (PAL_ZERO);
 
   if (file_name_copy == NULL)
@@ -185,19 +199,19 @@ wait_handler (tid_t pid) {
 bool
 create_handler (const char *file, unsigned initial_size) {
 
-  check_add (file);
-  return filesys_create (file, initial_size);   // lock 추가?
+  check_address (file);
+  return filesys_create (file, initial_size);
 }
 
 bool
 remove_handler (const char *file) {
-  check_add (file);
-  return (filesys_remove (file));   // lock 추가?
+  check_address (file);
+  return (filesys_remove (file));
 }
 
 int
 open_handler (const char *file) {
-  check_add (file);
+  check_address (file);
   struct file *file_st = filesys_open (file);
   if (file_st == NULL) {
     return -1;
@@ -212,24 +226,23 @@ open_handler (const char *file) {
   return fd_idx;
 }
 
-int add_file_to_FDT(struct file *file)
-{
-    struct thread *cur = thread_current();
-    struct file **fdt = cur->fd_table;
+int
+add_file_to_FDT (struct file *file) {
+  struct thread *cur = thread_current ();
+  struct file **fdt = cur->fd_table;
+  int fd_index = cur->fd_idx;
 
-    // Find open spot from the front
-    //  fd 위치가 제한 범위 넘지않고, fd table의 인덱스 위치와 일치한다면
-    while (cur->fd_idx < FD_COUNT_LIMT && fdt[cur->fd_idx])
-    {
-        cur->fd_idx++;
-    }
+  while (fdt[fd_index] != NULL && fd_index < FD_COUNT_LIMT) {
+    fd_index++;
+  }
 
-    // error - fd table full
-    if (cur->fd_idx >= FD_COUNT_LIMT)
-        return -1;
+  if (fd_index >= FD_COUNT_LIMT) {
+    return -1;
+  }
 
-    fdt[cur->fd_idx] = file;
-    return cur->fd_idx;
+  cur->fd_idx = fd_index;
+  fdt[fd_index] = file;
+  return fd_index;
 }
 
 int
@@ -244,7 +257,7 @@ file_size_handler (int fd) {
 
 int
 read_handler (int fd, const void *buffer, unsigned size) {
-  check_add (buffer);
+  check_address (buffer);
   int read_result;
   struct file *file_obj = find_file_using_fd (fd);
 
@@ -252,8 +265,6 @@ read_handler (int fd, const void *buffer, unsigned size) {
     return -1;
 
   if (fd == STDIN_FILENO) {
-    // *(char *) buffer = input_getc ();
-    // read_result = size;
     char word;
     for (read_result = 0; read_result < size; read_result++) {
       word = input_getc ();
@@ -272,7 +283,7 @@ read_handler (int fd, const void *buffer, unsigned size) {
 
 int
 write_handler (int fd, const void *buffer, unsigned size) {
-  check_add (buffer);
+  check_address (buffer);
   struct file *file_obj = find_file_using_fd (fd);
   if (fd == STDIN_FILENO)
     return 0;
@@ -294,12 +305,6 @@ void
 seek_handler (int fd, unsigned position) {
   struct file *file_obj = find_file_using_fd (fd);
 
-  // if (fd <= 2)
-  //   return;
-
-  // if (file_obj == NULL)
-  //   return;
-
   file_seek (file_obj, position);
 }
 
@@ -308,7 +313,7 @@ tell_handler (int fd) {
   if (fd <= 2)
     return;
   struct file *file_obj = find_file_using_fd (fd);
-  check_add (file_obj);
+  check_address (file_obj);
   if (file_obj == NULL)
     return;
 
@@ -321,11 +326,134 @@ close_handler (int fd) {
   if (file_obj == NULL)
     return;
 
-  lock_acquire (&filesys_lock);
-  file_close (file_obj);   // lock 추가하고?
-  lock_release (&filesys_lock);
-
   if (fd < 0 || fd >= FD_COUNT_LIMT)
     return;
   thread_current ()->fd_table[fd] = NULL;
+  palloc_free_page(thread_current ()->fd_table[fd]);
+
+  lock_acquire (&filesys_lock);
+  file_close (file_obj);
+  lock_release (&filesys_lock);
+}
+struct file *process_get_file(int fd) {
+	struct thread *curr = thread_current();
+	struct file* fd_file = curr->fd_table[fd];
+
+	if(fd_file)
+		return fd_file;
+	else
+		return	NULL;
+}
+
+// void *mmap (void *addr, size_t length, int writable, int fd, off_t offset){
+//   struct file *file = process_get_file(fd);
+
+// 	if (file == NULL)
+// 		return NULL;
+	
+// 	/* 파일의 시작점도 페이지 정렬 */
+// 	if (offset % PGSIZE != 0) {
+//         return NULL;
+//     }
+
+// 	/*  It must fail if addr is not page-aligned */
+// 	if (pg_round_down(addr) != addr || is_kernel_vaddr(addr))
+// 		return NULL;
+
+// 	/*  if the range of pages mapped overlaps any existing set of mapped pages */
+// 	if (spt_find_page(&thread_current()->spt, addr))
+// 		return NULL;
+
+// 	/* addr가 NULL(0), 파일의 길이가 0*/
+// 	if (addr == NULL || (long long)length == 0)
+// 		return NULL;
+	
+// 	/* file descriptors representing console input and output are not mappable */
+// 	if (fd == 0 || fd == 1)
+// 		exit_handler(-1);
+	
+// 	return do_mmap(addr, length, writable, file, offset);
+// }
+
+// void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
+// {
+// 	if (!addr || is_kernel_vaddr(addr) || pg_round_down(addr) != addr || (long long)length <= 0)
+// 	{
+// 		return NULL;
+// 	}
+
+// 	if (offset % PGSIZE)
+// 	{
+// 		return NULL;
+// 	}
+
+// 	if (fd == 0 || fd == 1)
+// 	{
+// 		return NULL;
+// 	}
+
+// 	if (addr == NULL)
+// 	{
+// 		return NULL;
+// 	}
+
+// 	if (spt_find_page(&thread_current()->spt, addr))
+// 	{
+// 		return NULL;
+// 	}
+
+// 	struct file *file = find_file_using_fd(fd);
+
+// 	if (file == NULL)
+// 	{
+// 		return NULL;
+// 	}
+//   lock_acquire(&filesys_lock);
+// 	file = file_reopen(file);
+//   lock_release(&filesys_lock);
+  
+
+// 	if (file == NULL)
+// 	{
+// 		return NULL;
+// 	}
+//   lock_acquire(&filesys_lock);
+// 	size_t length_result = file_length(file);
+//   lock_release(&filesys_lock);
+
+// 	return do_mmap(addr, length_result, writable, file, offset);
+// }
+
+void *mmap (void *addr, size_t length, int writable, int fd, off_t offset) {
+
+    if (offset % PGSIZE != 0) {
+        return NULL;
+    }
+		/* addr은 페이지 시작 주소이며 유저 영역 안에 있어야 한다.*/
+    if (pg_round_down(addr) != addr || is_kernel_vaddr(addr) || addr == NULL || (long long)length <= 0)
+        return NULL;
+    /* stdin, stdout은 제외한다.*/
+    if (fd == 0 || fd == 1)
+        exit_handler(-1);
+    /* 기존에 매핑되어 있는 페이지면 안된다. */
+    if (spt_find_page(&thread_current()->spt, addr))
+        return NULL;
+
+    struct file *target = process_get_file(fd);
+		/* 존재하는 파일을 매핑해야 한다.*/
+    if (target == NULL)
+        return NULL;
+		/* do_mmap 호출한다. */
+    void * ret = do_mmap(addr, length, writable, target, offset);
+
+    return ret;
+}
+
+
+void munmap (void *addr) {
+    if (is_kernel_vaddr(addr) || (uint64_t)addr % PGSIZE || !addr){
+        return;
+    }
+
+    do_munmap(addr);
 }

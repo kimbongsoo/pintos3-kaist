@@ -56,12 +56,12 @@ typedef void hash_action_func (struct hash_elem *e, void *aux);
 
 /* Hash table. */
 struct hash {
-	size_t elem_cnt;            /* Number of elements in table. */
-	size_t bucket_cnt;          /* Number of buckets, a power of 2. */
-	struct list *buckets;       /* Array of `bucket_cnt' lists. */
-	hash_hash_func *hash;       /* Hash function. */
-	hash_less_func *less;       /* Comparison function. */
-	void *aux;                  /* Auxiliary data for `hash' and `less'. */
+	size_t elem_cnt;            /* 테이블에 있는 원소 수 */
+	size_t bucket_cnt;          /* 버킷의 수 2의 거듭제곱 */
+	struct list *buckets;       /* bucket_cnt의 리스트 */
+	hash_hash_func *hash;       /* 해쉬 함수 */
+	hash_less_func *less;       /* 비교 함수 */
+	void *aux;                  /* `hash' 와 `less' function의 보조 데이터. */
 };
 
 /* A hash table iterator. */
@@ -96,5 +96,9 @@ bool hash_empty (struct hash *);
 uint64_t hash_bytes (const void *, size_t);
 uint64_t hash_string (const char *);
 uint64_t hash_int (int);
+
+//추가
+unsigned hash_func (const struct hash_elem *e, void *aux);
+bool less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 
 #endif /* lib/kernel/hash.h */

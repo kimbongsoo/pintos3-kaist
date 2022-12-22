@@ -8,7 +8,7 @@
 #define USERPROG_SYSCALL_H
 
 void syscall_init (void);
-void check_add (void *add);
+struct page* check_address(void *addr);
 void halt_handler (void);
 void exit_handler (int status);
 tid_t fork_handler (const char *thread_name, struct intr_frame *f);
