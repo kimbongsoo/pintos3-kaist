@@ -48,6 +48,25 @@ syscall_init (void) {
   lock_init (&filesys_lock);
 }
 
+struct page* check_address(void *addr){
+	// 주소 addr이 유저 가상 주소가 아니거나 pml4에 없으면 프로세스 종료
+	if (addr == NULL || !is_user_vaddr(addr)) exit_handler(-1);
+	
+	// 유저 가상 주소면 SPT에서 페이지 찾아서 리턴
+	return spt_find_page(&thread_current()->spt, addr);
+}
+
+void check_valid_buffer(void* buffer, unsigned size, void* rsp, bool to_write) {
+    for (int i = 0; i < size; i++) {
+        struct page* page = check_address(buffer + i);
+        // 인자로 받은 buffer부터 buffer + size까지의 크기가 한 페이지의 크기를 넘을수도 있음
+        if(page == NULL)
+            exit_handler(-1);
+        if(to_write == true && page->writable == false)
+            exit_handler(-1);
+    }
+}
+
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 
@@ -90,9 +109,11 @@ syscall_handler (struct intr_frame *f UNUSED) {
     f->R.rax = file_size_handler (a1);
     break;
   case SYS_READ:
+    check_valid_buffer(f->R.rsi, f->R.rdx, f->rsp, 1);
     f->R.rax = read_handler (a1, a2, a3);
     break;
   case SYS_WRITE:
+  check_valid_buffer(f->R.rsi, f->R.rdx, f->rsp, 0);
     f->R.rax = write_handler (a1, a2, a3);
     break;
   case SYS_SEEK:
@@ -103,6 +124,12 @@ syscall_handler (struct intr_frame *f UNUSED) {
     break;
   case SYS_CLOSE:
     close_handler (a1);
+    break;
+  case SYS_MMAP:
+    f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+    break;
+  case SYS_MUNMAP:
+    munmap(f->R.rdi);
     break;
 
   default:
@@ -118,14 +145,6 @@ add == NULL : 들어온 주소가 NULL 인지 확인
 pml4_get_page : 들어온 주소가 유자 가상주소 안에 할당된 페이지의 pointer인지 확인 
 -->유저 영역 내이면서도 그 안에 할당된 페이지 안에 있어야 한다
 */
-void
-check_address (void *add) {
-  struct thread *cur = thread_current ();
-  if (!is_user_vaddr (add) || add == NULL ||
-      pml4_get_page (cur->pml4, add) == NULL) {
-    exit_handler (-1);
-  }
-}
 
 static struct file *
 find_file_using_fd (int fd) {
@@ -315,4 +334,126 @@ close_handler (int fd) {
   lock_acquire (&filesys_lock);
   file_close (file_obj);
   lock_release (&filesys_lock);
+}
+struct file *process_get_file(int fd) {
+	struct thread *curr = thread_current();
+	struct file* fd_file = curr->fd_table[fd];
+
+	if(fd_file)
+		return fd_file;
+	else
+		return	NULL;
+}
+
+// void *mmap (void *addr, size_t length, int writable, int fd, off_t offset){
+//   struct file *file = process_get_file(fd);
+
+// 	if (file == NULL)
+// 		return NULL;
+	
+// 	/* 파일의 시작점도 페이지 정렬 */
+// 	if (offset % PGSIZE != 0) {
+//         return NULL;
+//     }
+
+// 	/*  It must fail if addr is not page-aligned */
+// 	if (pg_round_down(addr) != addr || is_kernel_vaddr(addr))
+// 		return NULL;
+
+// 	/*  if the range of pages mapped overlaps any existing set of mapped pages */
+// 	if (spt_find_page(&thread_current()->spt, addr))
+// 		return NULL;
+
+// 	/* addr가 NULL(0), 파일의 길이가 0*/
+// 	if (addr == NULL || (long long)length == 0)
+// 		return NULL;
+	
+// 	/* file descriptors representing console input and output are not mappable */
+// 	if (fd == 0 || fd == 1)
+// 		exit_handler(-1);
+	
+// 	return do_mmap(addr, length, writable, file, offset);
+// }
+
+// void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
+// {
+// 	if (!addr || is_kernel_vaddr(addr) || pg_round_down(addr) != addr || (long long)length <= 0)
+// 	{
+// 		return NULL;
+// 	}
+
+// 	if (offset % PGSIZE)
+// 	{
+// 		return NULL;
+// 	}
+
+// 	if (fd == 0 || fd == 1)
+// 	{
+// 		return NULL;
+// 	}
+
+// 	if (addr == NULL)
+// 	{
+// 		return NULL;
+// 	}
+
+// 	if (spt_find_page(&thread_current()->spt, addr))
+// 	{
+// 		return NULL;
+// 	}
+
+// 	struct file *file = find_file_using_fd(fd);
+
+// 	if (file == NULL)
+// 	{
+// 		return NULL;
+// 	}
+//   lock_acquire(&filesys_lock);
+// 	file = file_reopen(file);
+//   lock_release(&filesys_lock);
+  
+
+// 	if (file == NULL)
+// 	{
+// 		return NULL;
+// 	}
+//   lock_acquire(&filesys_lock);
+// 	size_t length_result = file_length(file);
+//   lock_release(&filesys_lock);
+
+// 	return do_mmap(addr, length_result, writable, file, offset);
+// }
+
+void *mmap (void *addr, size_t length, int writable, int fd, off_t offset) {
+
+    if (offset % PGSIZE != 0) {
+        return NULL;
+    }
+		/* addr은 페이지 시작 주소이며 유저 영역 안에 있어야 한다.*/
+    if (pg_round_down(addr) != addr || is_kernel_vaddr(addr) || addr == NULL || (long long)length <= 0)
+        return NULL;
+    /* stdin, stdout은 제외한다.*/
+    if (fd == 0 || fd == 1)
+        exit_handler(-1);
+    /* 기존에 매핑되어 있는 페이지면 안된다. */
+    if (spt_find_page(&thread_current()->spt, addr))
+        return NULL;
+
+    struct file *target = process_get_file(fd);
+		/* 존재하는 파일을 매핑해야 한다.*/
+    if (target == NULL)
+        return NULL;
+		/* do_mmap 호출한다. */
+    void * ret = do_mmap(addr, length, writable, target, offset);
+
+    return ret;
+}
+
+
+void munmap (void *addr) {
+    if (is_kernel_vaddr(addr) || (uint64_t)addr % PGSIZE || !addr){
+        return;
+    }
+
+    do_munmap(addr);
 }

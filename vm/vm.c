@@ -6,7 +6,7 @@
 #include "lib/kernel/hash.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
-
+struct list frame_table;
 struct list_elem* start;
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
@@ -21,6 +21,7 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	list_init(&frame_table);
+	start = list_begin(&frame_table);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -41,6 +42,7 @@ page_get_type (struct page *page) {
 static struct frame *vm_get_victim (void);
 static bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
+
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
@@ -65,6 +67,10 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 			case VM_FILE:
 				initializer = file_backed_initializer;
 				break;
+				//++cw
+			default:
+      			PANIC ("vm initial fail");
+      			break;
 		}
 		// TODO: 그 후, uninit_new를 호출하여 uninit페이지 struct를 만든다. 
 		struct page *new_page = malloc(sizeof(struct page));
@@ -177,7 +183,9 @@ vm_get_frame (void) {
         return frame;
     }
 	list_push_back (&frame_table, &frame->frame_elem);
+	
 	frame->page = NULL;
+	
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
 
@@ -187,6 +195,12 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	/*stack에 해당하는 ANON 페이지를 UNINIT로 만들고 SPT에 넣어준다. 그 후 claim해서 물리메모리와 매핑 해준다. */
+	if(vm_alloc_page(VM_ANON | VM_MARKER_0, addr, 1)){
+		vm_claim_page(addr);
+		/*stack_bottom 갱신*/
+		thread_current()->stack_bottom -= PGSIZE; /*stack은 위에서부터 쌓기 때문에 주소값 위치를 페이지 사이즈씩 마이너스 함.*/
+	}
 }
 
 /* Handle the fault on write_protected page */
@@ -202,7 +216,9 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = NULL;
 
 	/* TODO: fault 여부 확인*/
-	if(is_kernel_vaddr(addr))  return false;
+	if(is_kernel_vaddr(addr))  {
+		return false;
+	}
 	void *rsp_stack = is_kernel_vaddr(f->rsp) ? thread_current()->rsp_stack : f->rsp;
 
 	if(not_present){
@@ -318,3 +334,5 @@ supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	 * TODO: 수정된 모든 내용을 storage에 다시 쓴다. */
 	hash_destroy(&spt->spt_hash, spt_destructor);
 }
+
+

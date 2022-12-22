@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "threads/interrupt.h"
 #include "threads/synch.h"
+#include "lib/kernel/hash.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -27,7 +28,8 @@ typedef int tid_t;
 #define PRI_MIN     0  /* Lowest priority. */
 #define PRI_DEFAULT 31 /* Default priority. */
 #define PRI_MAX     63 /* Highest priority. */
-#define FD_COUNT_LIMT 1<<9 /*page 하나의 크기가 1<<12인데 그중 3칸은 페이지 주소를 위해 할당됨 따라서 쓸수있는 크기는 1<<9 까지임*/
+#define FD_COUNT_LIMT 1<<9 
+/*page 하나의 크기가 1<<12인데 그중 3칸은 페이지 주소를 위해 할당됨 따라서 쓸수있는 크기는 1<<9 까지임*/
 #define FD_PAGES 3
 
 /* A kernel thread or user process.
@@ -129,6 +131,8 @@ struct thread {
 #ifdef VM
   /* Table for whole virtual memory owned by thread. */
   struct supplemental_page_table spt;
+  void* rsp_stack;
+  void* stack_bottom;
 #endif
 
   /* Owned by thread.c. */

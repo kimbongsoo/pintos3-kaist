@@ -2,6 +2,9 @@
 #define VM_VM_H
 #include <stdbool.h>
 #include "threads/palloc.h"
+#include "lib/kernel/hash.h"
+
+struct list frame_table; //(+)frame table
 
 enum vm_type {
 	/* page not initialized */
@@ -41,11 +44,14 @@ struct thread;
  * uninit_page, file_page, anon_page, and page cache (project4).
  * DO NOT REMOVE/MODIFY PREDEFINED MEMBER OF THIS STRUCTURE. */
 struct page {
-	const struct page_operations *operations;
-	void *va;              /* Address in terms of user space */
-	struct frame *frame;   /* Back reference for frame */
-
+	const struct page_operations *operations; //operation 실행 함수
+	void *va;              /* User Space측면의 가상메모리 주소(Virtual Address)*/
+	struct frame *frame;   /* frame에 대한 역참조(물리메모리 주소) */
 	/* Your implementation */
+
+	struct hash_elem hash_elem; // SPT를 hash table로 구현 
+
+	bool writable; //true일 경우 주소에 write가능한 상태임을 나타냄
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -61,14 +67,16 @@ struct page {
 
 /* The representation of "frame" */
 struct frame {
-	void *kva;
-	struct page *page;
+	void *kva; // Kernel Vittual Addr에 Mapping된 Physical Memory
+	struct page *page; // Frame과 Mapping되는 Vnirtual Addr의 Page
+	struct list_elem frame_elem; // (+)Frame list를 관리하는 List
 };
 
-/* The function table for page operations.
- * This is one way of implementing "interface" in C.
- * Put the table of "method" into the struct's member, and
- * call it whenever you needed. */
+/* page operations에대한 함수 테이블입니다.
+ * C에서 interface를 구현하는 한가지 방법임
+ * 구조체의 멤버에 method method표를 넣고 필요할 때마다 호출한다.
+ * 해당 page가 어떤 타입(uninvalid, annon, file)을 가지는가에 따라 연산을 수행하는 함수들이 달라짐
+ */
 struct page_operations {
 	bool (*swap_in) (struct page *, void *);
 	bool (*swap_out) (struct page *);
@@ -81,10 +89,11 @@ struct page_operations {
 #define destroy(page) \
 	if ((page)->operations->destroy) (page)->operations->destroy (page)
 
-/* Representation of current process's memory space.
- * We don't want to force you to obey any specific design for this struct.
- * All designs up to you for this. */
+/* 현재 process의 메모리 공간을 나타냄
+ * 특정 설계를 따르도록 강요하고 있지 않음
+ * 너가 하기 나름에 달림 */
 struct supplemental_page_table {
+	struct hash spt_hash;
 };
 
 #include "threads/thread.h"
@@ -103,6 +112,7 @@ bool vm_try_handle_fault (struct intr_frame *f, void *addr, bool user,
 
 #define vm_alloc_page(type, upage, writable) \
 	vm_alloc_page_with_initializer ((type), (upage), (writable), NULL, NULL)
+	
 bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 		bool writable, vm_initializer *init, void *aux);
 void vm_dealloc_page (struct page *page);

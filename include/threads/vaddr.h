@@ -28,7 +28,7 @@
 /* Round up to nearest page boundary. */
 #define pg_round_up(va) ((void *) (((uint64_t) (va) + PGSIZE - 1) & ~PGMASK))
 
-/* Round down to nearest page boundary. */
+/* VA의 밑의 12자리(offset)를 0으로 초기화 해줌 */
 #define pg_round_down(va) (void *) ((uint64_t) (va) & ~PGMASK)
 
 /* Kernel virtual address start */
